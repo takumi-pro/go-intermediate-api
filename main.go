@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	_ "github.com/lib/pq"
-	"github.com/takumi-pro/go-intermediate-api/models"
 )
 
 func main() {
@@ -63,24 +62,41 @@ func main() {
 	}
 	defer db.Close()
 
-	article := models.Article{
-		Title:    "insert data",
-		Contents: "this is insert data",
-		UserName: "takumi",
-	}
-	const sqlStr = `
-		insert into articles (title, contents, username, nice, created_at) values
-		($1,$2,$3,0,now())
-		returning article_id;
-	`
-
-	result, err := db.Exec(sqlStr, article.Title, article.Contents, article.UserName)
+	tx, err := db.Begin()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	var newArticleID int
-	err = db.QueryRow(sqlStr, article.Title, article.Contents, article.UserName).Scan(&newArticleID)
-	fmt.Println(result.LastInsertId())
-	fmt.Println(result.RowsAffected())
+
+	article_id := 1
+	const sqlGetNice = `
+		select nice
+		from articles
+		where article_id = $1;
+	`
+
+	row := tx.QueryRow(sqlGetNice, article_id)
+	if err := row.Err(); err != nil {
+		fmt.Println(err)
+		tx.Rollback()
+		return
+	}
+
+	var nicenum int
+	err = row.Scan(&nicenum)
+	if err != nil {
+		fmt.Println(err)
+		tx.Rollback()
+		return
+	}
+
+	const sqlUpdateNice = `update articles set nice = $1 where article_id = $2`
+	_, err = tx.Exec(sqlUpdateNice, nicenum+1, article_id)
+	if err != nil {
+		fmt.Println(err)
+		tx.Rollback()
+		return
+	}
+
+	tx.Commit()
 }
